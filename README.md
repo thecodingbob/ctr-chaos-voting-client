@@ -27,8 +27,10 @@ installations may use different compatible versions.
 The project currently contains a platform-independent voting round, a game
 file adapter, and explicitly driven session orchestration with tests. The
 session requires a platform adapter to forward connection changes and votes,
-and a caller to schedule ticks. Twitch integration, the desktop UI, and the
-optional OBS overlay are not implemented yet.
+and a caller to schedule ticks. The Twitch adapter can send announcements via
+the Helix API using a supplied user token, but authentication, EventSub vote
+reception, connection monitoring, the desktop UI, and the optional OBS overlay
+are not implemented yet. The client is not yet usable end-to-end with Twitch.
 
 The game protocol is documented in
 [Chaos external file provider](https://github.com/thecodingbob/ctr-native/blob/master/docs/features/CHAOS_EXTERNAL_PROVIDER.md).
