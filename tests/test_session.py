@@ -1,3 +1,4 @@
+import logging
 import random
 
 from chaos_voting.game_files import GameFileError
@@ -141,3 +142,31 @@ def test_ambiguous_result_failure_is_not_retried():
     assert session.snapshot().state is SessionState.ERROR
     assert len(platform.results) == 1
     assert not game.submissions
+
+
+def test_session_logs_transitions_without_private_vote_data(caplog):
+    with caplog.at_level(logging.INFO, logger="chaos_voting.session"):
+        session, game, _, now = setup_session()
+        session.tick()
+        session.vote("private-user-id", "1")
+        now[0] = 10
+        session.tick()
+        session.tick()
+        session.tick()
+        session.stop()
+    assert game.submissions
+    assert "Session started" in caplog.text
+    assert "Voting result announced" in caplog.text
+    assert caplog.text.count("Command submitted; waiting") == 1
+    assert "Session stopped" in caplog.text
+    assert "private-user-id" not in caplog.text
+    assert "activated" not in caplog.text
+
+
+def test_catalog_wait_log_is_not_repeated(caplog):
+    session, game, _, _ = setup_session()
+    game.error = True
+    with caplog.at_level(logging.INFO, logger="chaos_voting.session"):
+        session.tick()
+        session.tick()
+    assert caplog.text.count("Game files unavailable") == 1
