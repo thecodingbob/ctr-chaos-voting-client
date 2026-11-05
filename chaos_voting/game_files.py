@@ -1,6 +1,9 @@
 """File adapter for the game's external Chaos provider."""
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class GameFileError(Exception):
@@ -36,11 +39,14 @@ class GameFiles:
         try:
             content = (self._directory / "effects").read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
+            logger.warning("Unable to read the effects catalog")
             raise GameFileError("Cannot read the effects catalog") from exc
         effects = content.splitlines()
         for effect in effects:
             if not _valid_slug(effect):
+                logger.warning("Effects catalog contains an invalid slug")
                 raise GameFileError(f"The effects catalog contains an invalid slug: {effect}")
+        logger.debug("Read %d effects from the catalog", len(effects))
         return tuple(effects)
 
     def command_pending(self) -> bool:
@@ -50,6 +56,7 @@ class GameFiles:
         except FileNotFoundError:
             return False
         except OSError as exc:
+            logger.warning("Unable to check the pending command")
             raise GameFileError("Cannot check the pending command") from exc
         return True
 
@@ -62,6 +69,7 @@ class GameFiles:
         if not _valid_slug(slug):
             raise ValueError("Invalid effect slug")
         if self.command_pending():
+            logger.debug("Command submission deferred: a command is already pending")
             raise CommandPendingError("A command is already pending")
         temporary = self._directory / "command.tmp"
         command = self._directory / "command"
@@ -71,13 +79,16 @@ class GameFiles:
                 created = True
                 stream.write(slug)
             temporary.rename(command)
+            logger.info("Command submitted; waiting for the game to consume it")
         except FileExistsError as exc:
+            logger.warning("Command submission blocked by an existing file")
             raise CommandPendingError("A command or temporary file already exists") from exc
         except OSError as exc:
+            logger.warning("Command submission failed")
             raise GameFileError("Cannot submit the command") from exc
         finally:
             if created:
                 try:
                     temporary.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    logger.warning("Could not remove the temporary command file")

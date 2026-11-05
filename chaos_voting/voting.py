@@ -1,5 +1,6 @@
 """Voting round rules, independent of the game and chat platform."""
 
+import logging
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from enum import Enum, auto
 from math import isfinite
 from random import Random
 from time import monotonic
+
+logger = logging.getLogger(__name__)
 
 
 class RoundState(Enum):
@@ -51,6 +54,7 @@ class VotingRound:
         self._state = RoundState.PREPARED
         self._winner: str | None = None
         self._cancellation_reason: str | None = None
+        logger.info("Voting round prepared with %d options", len(self._options))
 
     def open(self) -> None:
         """Open voting after the options have been announced."""
@@ -58,6 +62,7 @@ class VotingRound:
             raise RuntimeError("Only a prepared round can be opened")
         self._deadline = self._clock() + self._duration
         self._state = RoundState.OPEN
+        logger.info("Voting round opened for %s seconds", self._duration)
 
     def vote(self, user_id: str, message: str) -> bool:
         """Record the latest valid vote; reject messages outside the voting window."""
@@ -91,6 +96,7 @@ class VotingRound:
         ]
         self._winner = self._random.choice(candidates)
         self._state = RoundState.CLOSED
+        logger.info("Voting round closed with %d votes", len(self._votes))
         return self._winner
 
     def cancel(self, reason: str) -> None:
@@ -101,6 +107,7 @@ class VotingRound:
             raise ValueError("A cancellation reason is required")
         self._cancellation_reason = reason
         self._state = RoundState.CANCELLED
+        logger.info("Voting round cancelled")
 
     def snapshot(self) -> RoundSnapshot:
         counts = Counter(self._votes.values())
