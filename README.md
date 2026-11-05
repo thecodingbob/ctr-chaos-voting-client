@@ -24,9 +24,9 @@ installations may use different compatible versions.
 
 ## Current scope
 
-The project currently contains a platform-independent voting round and its
-tests. Session orchestration, the game file provider, Twitch integration, the
-desktop UI, and the optional OBS overlay are not implemented yet.
+The project currently contains a platform-independent voting round, a game
+file adapter, and their tests. Session orchestration, Twitch integration,
+the desktop UI, and the optional OBS overlay are not implemented yet.
 
 The game protocol is documented in
 [Chaos external file provider](https://github.com/thecodingbob/ctr-native/blob/master/docs/features/CHAOS_EXTERNAL_PROVIDER.md).
