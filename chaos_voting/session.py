@@ -4,6 +4,7 @@ All calls must be serialized by the caller. The platform must notify the session
 of every loss of message collection, even if it reconnects between ticks.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -14,6 +15,8 @@ from time import monotonic
 from chaos_voting.game_files import GameFileError, GameProvider
 from chaos_voting.platform import PlatformError, VotingPlatform
 from chaos_voting.voting import RoundSnapshot, RoundState, VotingRound
+
+logger = logging.getLogger(__name__)
 
 
 class SessionState(Enum):
@@ -65,18 +68,23 @@ class Session:
         self._round = None
         self._state = SessionState.WAITING_CONNECTION
         self._message = "Waiting for the voting platform"
+        logger.info("Session started")
 
     def stop(self) -> None:
         if self._round and self._round.snapshot().state in (RoundState.PREPARED, RoundState.OPEN):
             self._round.cancel("Session stopped")
         self._state = SessionState.STOPPED
         self._message = "Session stopped; any submitted command may still be consumed later"
+        logger.info("Session stopped; any submitted command may still be consumed later")
 
     def connection_changed(self, connected: bool) -> None:
+        if connected != self._connected:
+            logger.info("Voting platform %s", "connected" if connected else "disconnected")
         self._connected = connected
         if not connected and self._state not in (SessionState.STOPPED, SessionState.ERROR):
             if self._round and self._round.snapshot().state in (RoundState.PREPARED, RoundState.OPEN):
                 self._round.cancel("Voting platform disconnected; votes may be incomplete")
+                logger.warning("Voting round cancelled because the platform disconnected")
             self._state = SessionState.WAITING_CONNECTION
             self._message = "Voting platform disconnected; waiting for reconnection"
 
@@ -104,6 +112,7 @@ class Session:
             except PlatformError:
                 self._fail("Could not announce the result; session stopped")
                 return
+            logger.info("Voting result announced")
             try:
                 self._game.submit(winner)
             except GameFileError as exc:
@@ -111,18 +120,26 @@ class Session:
                 return
             self._state = SessionState.WAITING_COMMAND
             self._message = "Waiting for the game to consume the command"
+            logger.info("Command submitted; waiting for the game to consume it")
             return
         try:
             if self._game.command_pending():
+                if self._state is not SessionState.WAITING_COMMAND:
+                    logger.info("Waiting for the game to consume the pending command")
                 self._state = SessionState.WAITING_COMMAND
                 self._message = "Waiting for the game to consume the command"
                 return
             catalog = self._game.read_effects()
         except GameFileError as exc:
+            if self._state is not SessionState.WAITING_CATALOG:
+                logger.warning("Game files unavailable; waiting before retrying")
             self._state = SessionState.WAITING_CATALOG
             self._message = str(exc)
             return
         if len(set(catalog)) < 2:
+            if (self._state is not SessionState.WAITING_CATALOG
+                    or self._message != "At least two distinct effects are required"):
+                logger.info("Waiting for at least two distinct effects")
             self._state = SessionState.WAITING_CATALOG
             self._message = "At least two distinct effects are required"
             return
@@ -136,7 +153,9 @@ class Session:
         self._round.open()
         self._state = SessionState.VOTING
         self._message = "Voting is open"
+        logger.info("Voting options announced; session voting is open")
 
     def _fail(self, message: str) -> None:
         self._state = SessionState.ERROR
         self._message = message
+        logger.error("Session stopped after an announcement or command submission failure")
