@@ -1,7 +1,7 @@
 # CTR Native Expanded Chaos Voting Client
 
 Desktop client for choosing Chaos effects through Twitch chat.
-The project is in its initial setup phase; the client is not implemented yet.
+The project is in its initial development phase.
 
 ## Development environment
 
@@ -21,3 +21,12 @@ Run checks and tests with:
 
 Development dependencies use version ranges, not a lockfile: separate
 installations may use different compatible versions.
+
+## Current scope
+
+The project currently contains a platform-independent voting round and its
+tests. Session orchestration, the game file provider, Twitch integration, the
+desktop UI, and the optional OBS overlay are not implemented yet.
+
+The game protocol is documented in
+[Chaos external file provider](https://github.com/thecodingbob/ctr-native/blob/master/docs/features/CHAOS_EXTERNAL_PROVIDER.md).
