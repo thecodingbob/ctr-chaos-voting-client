@@ -1,0 +1,16 @@
+docs/CLIENT_PLAN.md
+.idea
+
+# Virtual environments and Python-generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
