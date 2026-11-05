@@ -42,6 +42,7 @@ def test_invalid_duration(clock: Clock, duration: float) -> None:
 
 def test_latest_valid_vote_and_exact_messages(clock: Clock) -> None:
     round_ = make_round(clock, ("a", "b"))
+    round_.open()
     assert round_.vote("user", "1")
     assert round_.vote("user", "2")
     for message in ("3", " 1", "1 ", "01", "1\n", ""):
@@ -56,9 +57,11 @@ def test_latest_valid_vote_and_exact_messages(clock: Clock) -> None:
 
 def test_ties_and_no_votes_choose_only_eligible_options(clock: Clock) -> None:
     tied = make_round(clock)
+    tied.open()
     tied.vote("one", "1")
     tied.vote("two", "2")
     empty = make_round(clock)
+    empty.open()
     clock.now = 10
     assert tied.close() in tied.snapshot().options[:2]
     assert empty.close() in empty.snapshot().options
@@ -66,6 +69,7 @@ def test_ties_and_no_votes_choose_only_eligible_options(clock: Clock) -> None:
 
 def test_close_before_deadline_and_cancellation(clock: Clock) -> None:
     round_ = make_round(clock)
+    round_.open()
     with pytest.raises(RuntimeError):
         round_.close()
     round_.cancel("Connection lost")
@@ -74,3 +78,29 @@ def test_close_before_deadline_and_cancellation(clock: Clock) -> None:
     assert not round_.vote("user", "1")
     with pytest.raises(RuntimeError):
         round_.close()
+
+
+def test_timer_starts_only_after_announcement(clock: Clock) -> None:
+    round_ = make_round(clock)
+    assert round_.snapshot().state is RoundState.PREPARED
+    assert round_.snapshot().deadline is None
+    assert not round_.vote("user", "1")
+    with pytest.raises(RuntimeError):
+        round_.close()
+    clock.now = 100
+    round_.open()
+    assert round_.snapshot().deadline == 110
+    assert round_.vote("user", "1")
+    with pytest.raises(RuntimeError):
+        round_.open()
+    clock.now = 110
+    assert not round_.vote("user", "1")
+    round_.close()
+
+
+def test_prepared_round_can_be_cancelled(clock: Clock) -> None:
+    round_ = make_round(clock)
+    round_.cancel("Announcement failed")
+    assert round_.snapshot().state is RoundState.CANCELLED
+    with pytest.raises(RuntimeError):
+        round_.open()

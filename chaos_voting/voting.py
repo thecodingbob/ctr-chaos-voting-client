@@ -10,6 +10,7 @@ from time import monotonic
 
 
 class RoundState(Enum):
+    PREPARED = auto()
     OPEN = auto()
     CLOSED = auto()
     CANCELLED = auto()
@@ -20,7 +21,7 @@ class RoundSnapshot:
     state: RoundState
     options: tuple[str, ...]
     counts: tuple[int, ...]
-    deadline: float
+    deadline: float | None
     winner: str | None
     cancellation_reason: str | None
 
@@ -44,15 +45,26 @@ class VotingRound:
         self._random = random if random is not None else Random()
         self._clock = clock
         self._options = tuple(self._random.sample(effects, min(3, len(effects))))
-        self._deadline = clock() + duration
+        self._duration = duration
+        self._deadline: float | None = None
         self._votes: dict[str, int] = {}
-        self._state = RoundState.OPEN
+        self._state = RoundState.PREPARED
         self._winner: str | None = None
         self._cancellation_reason: str | None = None
 
+    def open(self) -> None:
+        """Open voting after the options have been announced."""
+        if self._state is not RoundState.PREPARED:
+            raise RuntimeError("Only a prepared round can be opened")
+        self._deadline = self._clock() + self._duration
+        self._state = RoundState.OPEN
+
     def vote(self, user_id: str, message: str) -> bool:
         """Record the latest valid vote; reject messages outside the voting window."""
-        if self._state is not RoundState.OPEN or self._clock() >= self._deadline:
+        if self._state is not RoundState.OPEN:
+            return False
+        assert self._deadline is not None
+        if self._clock() >= self._deadline:
             return False
         if not user_id or message not in ("1", "2", "3"):
             return False
@@ -64,11 +76,12 @@ class VotingRound:
 
     def close(self) -> str | None:
         """Close an expired round and return its winner, consistently on retries."""
-        if self._state is RoundState.CANCELLED:
-            raise RuntimeError("A cancelled round cannot be closed")
         if self._state is RoundState.CLOSED:
             assert self._winner is not None
             return self._winner
+        if self._state is not RoundState.OPEN:
+            raise RuntimeError("Only an open round can be closed")
+        assert self._deadline is not None
         if self._clock() < self._deadline:
             raise RuntimeError("The voting window is still open")
         counts = Counter(self._votes.values())
@@ -81,9 +94,9 @@ class VotingRound:
         return self._winner
 
     def cancel(self, reason: str) -> None:
-        """Cancel an open round, including one whose deadline has elapsed."""
-        if self._state is not RoundState.OPEN:
-            raise RuntimeError("Only an open round can be cancelled")
+        """Cancel a prepared or open round, including after the deadline."""
+        if self._state not in (RoundState.PREPARED, RoundState.OPEN):
+            raise RuntimeError("Only a prepared or open round can be cancelled")
         if not reason:
             raise ValueError("A cancellation reason is required")
         self._cancellation_reason = reason
