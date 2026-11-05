@@ -60,7 +60,11 @@ def _positive_int(value: object) -> bool:
 
 
 class TwitchDeviceAuth:
-    """One authorization attempt; calls must be serialized by the caller."""
+    """Manage authorization attempts; callers must serialize calls.
+
+    The caller must discard a refresh token after any exchange attempt, even
+    across instances or restarts. The in-memory reuse guard is instance-local.
+    """
 
     def __init__(self, client_id: str, *, opener: Callable = urlopen,
                  clock: Callable[[], float] = monotonic) -> None:
@@ -73,10 +77,15 @@ class TwitchDeviceAuth:
         self._next_poll = 0.0
         self._interval = 0
         self._pending_tokens: tuple[str, str] | None = None
+        self._expected_user_id: str | None = None
+        self._attempted_refresh_tokens: set[str] = set()
 
     def start(self) -> DeviceAuthorization:
+        if self._pending_tokens is not None:
+            raise AuthenticationError("Token validation is in progress; poll before starting again")
         self._authorization = None
         self._pending_tokens = None
+        self._expected_user_id = None
         payload = self._post(_DEVICE_URL, {"client_id": self._client_id, "scopes": " ".join(SCOPES)})
         if (not all(_nonempty(payload.get(key)) for key in
                     ("device_code", "user_code", "verification_uri"))
@@ -137,6 +146,39 @@ class TwitchDeviceAuth:
         self._pending_tokens = (payload["access_token"], payload["refresh_token"])
         return self._validate_pending()
 
+    def refresh(self, credentials: TwitchCredentials) -> TwitchCredentials | None:
+        """Exchange a refresh token once, then validate the replacement tokens.
+
+        Calls must be serialized. Never automatically retry an uncertain exchange:
+        public-client refresh tokens are single-use and may already be consumed.
+        If validation is temporarily unavailable, poll() retries validation only.
+        """
+        if self._authorization is not None or self._pending_tokens is not None:
+            raise AuthenticationError("A Twitch authorization is already in progress")
+        if credentials.refresh_token in self._attempted_refresh_tokens:
+            raise AuthenticationError("This Twitch refresh token has already been used; reauthorize")
+        self._attempted_refresh_tokens.add(credentials.refresh_token)
+        try:
+            payload = self._post(_TOKEN_URL, {
+                "client_id": self._client_id,
+                "grant_type": "refresh_token",
+                "refresh_token": credentials.refresh_token,
+            })
+        except AuthenticationError:
+            logger.warning("Twitch token refresh outcome is uncertain; reauthorization may be required")
+            raise AuthenticationError(
+                "Twitch token refresh outcome is uncertain; do not retry the old refresh token"
+            ) from None
+        if (payload is None or not _nonempty(payload.get("access_token"))
+                or not _nonempty(payload.get("refresh_token"))
+                or str(payload.get("token_type", "")).lower() != "bearer"):
+            raise AuthenticationError("Invalid Twitch refresh response; reauthorization may be required")
+        self._pending_tokens = (payload["access_token"], payload["refresh_token"])
+        self._expected_user_id = credentials.user_id
+        self._interval = 5
+        logger.info("Twitch token refresh exchanged; validating replacement token")
+        return self._validate_pending()
+
     def _validate_pending(self) -> TwitchCredentials | None:
         assert self._pending_tokens is not None
         token, refresh_token = self._pending_tokens
@@ -150,17 +192,22 @@ class TwitchDeviceAuth:
             return None
         except AuthenticationError:
             self._pending_tokens = None
+            self._expected_user_id = None
             raise
         assert validation is not None
         scopes = validation.get("scopes")
         if (validation.get("client_id") != self._client_id
                 or not _nonempty(validation.get("user_id"))
+                or (self._expected_user_id is not None
+                    and validation.get("user_id") != self._expected_user_id)
                 or not _nonempty(validation.get("login"))
                 or not _positive_int(validation.get("expires_in"))
                 or not isinstance(scopes, list) or not all(scope in scopes for scope in SCOPES)):
             self._pending_tokens = None
+            self._expected_user_id = None
             raise AuthenticationError("Twitch token validation failed or permissions are missing")
         self._pending_tokens = None
+        self._expected_user_id = None
         logger.info("Twitch user authorization completed and token validated")
         return TwitchCredentials(user_id=validation["user_id"], login=validation["login"],
                                  expires_in=validation["expires_in"], access_token=token,

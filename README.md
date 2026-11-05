@@ -29,7 +29,8 @@ file adapter, and explicitly driven session orchestration with tests. The
 session requires a platform adapter to forward connection changes and votes,
 and a caller to schedule ticks. The Twitch adapter can send announcements via
 the Helix API. A public-client device authorization flow obtains and validates
-tokens in memory; token storage, refresh, periodic validation, EventSub vote
+tokens in memory and supports explicit token refresh; token storage, automatic
+refresh, periodic validation, EventSub vote
 reception, connection monitoring, the desktop UI, and the optional OBS overlay
 are not implemented yet. The client is not yet usable end-to-end with Twitch.
 

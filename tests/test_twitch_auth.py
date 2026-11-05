@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from chaos_voting.twitch_auth import AuthenticationError, TwitchDeviceAuth
+from chaos_voting.twitch_auth import AuthenticationError, TwitchCredentials, TwitchDeviceAuth
 
 DEVICE = {"device_code": "device-secret", "user_code": "ABC123", "expires_in": 30,
           "interval": 5, "verification_uri": "https://www.twitch.tv/activate"}
@@ -140,3 +140,66 @@ def test_slow_down_increases_subsequent_poll_interval():
     assert len(server.requests) == 3
     now[0] = 25
     assert auth.poll().user_id == "123"
+
+
+def test_refresh_rotates_tokens_and_retries_validation_only(caplog):
+    now = [0]
+    credentials = TwitchCredentials("123", "channel", 5, "old-access", "old/refresh+token")
+    server = TwitchServer(TOKEN, URLError("secret"), VALIDATION)
+    auth = TwitchDeviceAuth("client", opener=server, clock=lambda: now[0])
+    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch_auth"):
+        assert auth.refresh(credentials) is None
+        assert auth.poll() is None
+        with pytest.raises(AuthenticationError, match="validation is in progress"):
+            auth.start()
+        now[0] = 5
+        refreshed = auth.poll()
+    assert refreshed.access_token == "access-secret"
+    assert refreshed.refresh_token == "refresh-secret"
+    assert parse_qs(server.requests[0].data.decode()) == {
+        "client_id": ["client"], "grant_type": ["refresh_token"],
+        "refresh_token": ["old/refresh+token"],
+    }
+    assert len(server.requests) == 3
+    for secret in ("old-access", "old/refresh+token", "access-secret", "refresh-secret"):
+        assert secret not in caplog.text
+    with pytest.raises(AuthenticationError, match="already been used"):
+        auth.refresh(credentials)
+    assert len(server.requests) == 3
+
+
+def test_refresh_rejects_different_account():
+    credentials = TwitchCredentials("123", "channel", 5, "old", "refresh")
+    server = TwitchServer(TOKEN, {**VALIDATION, "user_id": "different"})
+    auth = TwitchDeviceAuth("client", opener=server)
+    with pytest.raises(AuthenticationError, match="validation failed"):
+        auth.refresh(credentials)
+    with pytest.raises(AuthenticationError, match="No Twitch authorization"):
+        auth.poll()
+
+
+def test_ambiguous_refresh_failure_is_not_retried():
+    credentials = TwitchCredentials("123", "channel", 5, "old", "secret-refresh")
+    server = TwitchServer(URLError("secret-refresh"))
+    auth = TwitchDeviceAuth("client", opener=server)
+    with pytest.raises(AuthenticationError, match="do not retry") as exc:
+        auth.refresh(credentials)
+    assert "secret-refresh" not in str(exc.value)
+    assert len(server.requests) == 1
+    with pytest.raises(AuthenticationError, match="already been used"):
+        auth.refresh(credentials)
+    assert len(server.requests) == 1
+
+
+@pytest.mark.parametrize("response", [
+    [], HTTPError("url", 408, "timeout", {}, None),
+])
+def test_other_uncertain_refresh_responses_are_not_retried(response):
+    credentials = TwitchCredentials("123", "channel", 5, "old", "refresh")
+    server = TwitchServer(response)
+    auth = TwitchDeviceAuth("client", opener=server)
+    with pytest.raises(AuthenticationError, match="do not retry"):
+        auth.refresh(credentials)
+    with pytest.raises(AuthenticationError, match="already been used"):
+        auth.refresh(credentials)
+    assert len(server.requests) == 1
