@@ -30,9 +30,11 @@ session requires a platform adapter to forward connection changes and votes,
 and a caller to schedule ticks. The Twitch adapter can send announcements via
 the Helix API. A public-client device authorization flow obtains and validates
 tokens in memory and supports explicit token refresh; token storage, automatic
-refresh, periodic validation, EventSub vote
-reception, connection monitoring, the desktop UI, and the optional OBS overlay
-are not implemented yet. The client is not yet usable end-to-end with Twitch.
+refresh and periodic validation are not yet implemented. An explicitly driven
+EventSub receiver can subscribe and forward chat events, but the application
+still needs to wire it to the session and schedule connection monitoring. The
+desktop UI and optional OBS overlay are not implemented yet. The client is not
+yet usable end-to-end with Twitch.
 
 The game protocol is documented in
 [Chaos external file provider](https://github.com/thecodingbob/ctr-native/blob/master/docs/features/CHAOS_EXTERNAL_PROVIDER.md).
