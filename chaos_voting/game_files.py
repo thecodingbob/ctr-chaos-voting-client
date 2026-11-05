@@ -1,7 +1,9 @@
 """File adapter for the game's external Chaos provider."""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +14,17 @@ class GameFileError(Exception):
 
 class CommandPendingError(GameFileError):
     """A command is already waiting for the game to consume it."""
+
+
+class GameProvider(Protocol):
+    """Game operations required by a voting session.
+
+    Implementations report operational failures using GameFileError.
+    """
+
+    def read_effects(self) -> Sequence[str]: ...
+    def command_pending(self) -> bool: ...
+    def submit(self, slug: str) -> None: ...
 
 
 def _valid_slug(slug: str) -> bool:
@@ -28,7 +41,7 @@ def _valid_slug(slug: str) -> bool:
     )
 
 
-class GameFiles:
+class GameFiles(GameProvider):
     """Read effects and submit one command at a time to the game."""
 
     def __init__(self, directory: Path) -> None:
@@ -63,8 +76,8 @@ class GameFiles:
     def submit(self, slug: str) -> None:
         """Publish a command using the protocol's single-producer assumption.
 
-        The caller must serialize submissions and revalidate the winner against
-        the current catalog immediately before submission.
+        The caller must serialize submissions. The game decides whether a
+        submitted effect is still valid when it consumes the command.
         """
         if not _valid_slug(slug):
             raise ValueError("Invalid effect slug")
