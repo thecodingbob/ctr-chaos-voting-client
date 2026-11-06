@@ -14,10 +14,10 @@
 
 - `chaos_voting/voting.py`: platform-independent round rules, with injectable
   clock and randomness. Keep the rules independent of Twitch, OBS, and game files.
-- `chaos_voting/game_files.py`: `GameProvider` contract and `GameFiles` adapter.
+- `chaos_voting/game/files.py`: `GameProvider` contract and `GameFiles` adapter.
 - `chaos_voting/platform.py`: `VotingPlatform` and `PlatformError` contracts.
-  `chaos_voting/twitch.py` implements chat announcements through Twitch Helix;
-  `chaos_voting/twitch_auth.py` implements public-client device authorization.
+  `chaos_voting/twitch/chat.py` implements chat announcements through Twitch Helix;
+  `chaos_voting/twitch/auth.py` implements public-client device authorization.
 - `chaos_voting/session.py`: explicitly driven orchestration. The caller must
   serialize calls, schedule ticks, forward votes, and report every interruption
   in message collection, even if reconnection occurs between ticks.
@@ -60,3 +60,4 @@
 - Prompt the user before adding a new dependency to the project, explaining why and how would it help.
 - When you're done implementing something, spawn a sub-agent and ask it to do a code review.
 - Always stage the files you create modify, unless asked differently.
+- Don't immediately roll the code back when you find an issue. Try to fix it first.

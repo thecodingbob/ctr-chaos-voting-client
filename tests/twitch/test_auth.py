@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from chaos_voting.twitch_auth import AuthenticationError, TwitchCredentials, TwitchDeviceAuth
+from chaos_voting.twitch.auth import AuthenticationError, TwitchCredentials, TwitchDeviceAuth
 
 DEVICE = {"device_code": "device-secret", "user_code": "ABC123", "expires_in": 30,
           "interval": 5, "verification_uri": "https://www.twitch.tv/activate"}
@@ -38,7 +38,7 @@ def test_device_flow_polling_and_validation(caplog):
     server = TwitchServer(DEVICE, pending(), TOKEN, VALIDATION)
     now = [0.0]
     auth = TwitchDeviceAuth("client", opener=server, clock=lambda: now[0])
-    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch_auth"):
+    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch.auth"):
         device = auth.start()
         assert auth.poll() is None
         now[0] = 5
@@ -109,7 +109,7 @@ def test_validation_retry_keeps_tokens_without_reusing_device_code(caplog):
     auth = TwitchDeviceAuth("client", opener=server, clock=lambda: now[0])
     auth.start()
     now[0] = 5
-    with caplog.at_level(logging.WARNING, logger="chaos_voting.twitch_auth"):
+    with caplog.at_level(logging.WARNING, logger="chaos_voting.twitch.auth"):
         assert auth.poll() is None
         now[0] = 9
         assert auth.poll() is None
@@ -147,7 +147,7 @@ def test_refresh_rotates_tokens_and_retries_validation_only(caplog):
     credentials = TwitchCredentials("123", "channel", 5, "old-access", "old/refresh+token")
     server = TwitchServer(TOKEN, URLError("secret"), VALIDATION)
     auth = TwitchDeviceAuth("client", opener=server, clock=lambda: now[0])
-    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch_auth"):
+    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch.auth"):
         assert auth.refresh(credentials) is None
         assert auth.poll() is None
         with pytest.raises(AuthenticationError, match="validation is in progress"):

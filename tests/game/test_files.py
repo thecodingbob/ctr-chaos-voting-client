@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from chaos_voting.game_files import CommandPendingError, GameFileError, GameFiles
+from chaos_voting.game.files import CommandPendingError, GameFileError, GameFiles
 
 
 @pytest.fixture

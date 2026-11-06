@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from chaos_voting.platform import PlatformError
-from chaos_voting.twitch import TwitchPlatform
+from chaos_voting.twitch.chat import TwitchPlatform
 
 
 class Response(io.BytesIO):
@@ -22,7 +22,7 @@ def test_announcements_use_authenticated_channel_and_number_options(caplog):
         return Response(b'{"data":[{"is_sent":true}]}')
 
     platform = TwitchPlatform("client", "secret-token", "123", opener=open_request)
-    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch"):
+    with caplog.at_level(logging.INFO, logger="chaos_voting.twitch.chat"):
         platform.announce_options(("first", "second"))
         platform.announce_result("first")
     request, timeout = requests[0]
@@ -59,7 +59,7 @@ def test_transport_errors_do_not_leak_secrets_or_retry(error, caplog):
         raise error
 
     platform = TwitchPlatform("client", "secret-token", "123", opener=fail)
-    with caplog.at_level(logging.WARNING, logger="chaos_voting.twitch"), \
+    with caplog.at_level(logging.WARNING, logger="chaos_voting.twitch.chat"), \
             pytest.raises(PlatformError) as exc:
         platform.announce_result("effect")
     assert len(calls) == 1

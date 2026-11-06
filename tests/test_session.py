@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from chaos_voting.clock import Clock
-from chaos_voting.game_files import GameFileError
+from chaos_voting.game.files import GameFileError
 from chaos_voting.platform import PlatformError
 from chaos_voting.session import Session, SessionState
 from chaos_voting.voting import RoundState

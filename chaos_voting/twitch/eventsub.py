@@ -19,7 +19,7 @@ from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 logger = logging.getLogger(__name__)
-_socket_logger = logging.getLogger("chaos_voting.eventsub.websocket")
+_socket_logger = logging.getLogger("chaos_voting.twitch.eventsub.websocket")
 _socket_logger.addHandler(logging.NullHandler())
 _socket_logger.propagate = False
 _socket_logger.setLevel(logging.CRITICAL + 1)
