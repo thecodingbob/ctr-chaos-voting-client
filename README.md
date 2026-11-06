@@ -32,7 +32,12 @@ the Helix API. A public-client device authorization flow obtains and validates
 tokens in memory and supports explicit token refresh; token storage, automatic
 refresh and periodic validation are not yet implemented. An explicitly driven
 EventSub receiver can subscribe and forward chat events, but the application
-still needs to wire it to the session and schedule connection monitoring. The
+still needs to wire it to the session and schedule connection monitoring.
+The session filters EventSub notification timestamps before round opening and
+deduplicates IDs across two rounds.
+Twitch's notification timestamp is not necessarily the chat publication time.
+Votes processed after the monotonic deadline are ignored, and processing order
+may not match chat publication order. The
 desktop UI and optional OBS overlay are not implemented yet. The client is not
 yet usable end-to-end with Twitch.
 

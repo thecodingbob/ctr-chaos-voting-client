@@ -1,5 +1,9 @@
 import random
+from datetime import UTC, datetime, timedelta, timezone
 
+import pytest
+
+from chaos_voting.clock import Clock
 from chaos_voting.game_files import GameFileError
 from chaos_voting.platform import PlatformError
 from chaos_voting.session import Session, SessionState
@@ -41,9 +45,21 @@ class Platform:
             raise PlatformError("ambiguous failure")
 
 
+class FakeClock(Clock):
+    def __init__(self, now, utc=None):
+        self.now = now
+        self.utc = utc or datetime(2026, 11, 6, 10, tzinfo=UTC)
+
+    def monotonic(self):
+        return self.now[0]
+
+    def utc_now(self):
+        return self.utc
+
+
 def setup_session():
     game, platform, now = Game(), Platform(), [0.0]
-    session = Session(game, platform, 10, clock=lambda: now[0], random=random.Random(1))
+    session = Session(game, platform, 10, clock=FakeClock(now), random=random.Random(1))
     session.connection_changed(True)
     session.start()
     return session, game, platform, now
@@ -141,3 +157,86 @@ def test_ambiguous_result_failure_is_not_retried():
     assert session.snapshot().state is SessionState.ERROR
     assert len(platform.results) == 1
     assert not game.submissions
+
+
+def test_event_timestamps_and_deduplication_across_rounds():
+    now = [0.0]
+    opened = datetime(2026, 11, 6, 10, tzinfo=UTC)
+    game = Game()
+    session = Session(game, Platform(), 10, clock=FakeClock(now, opened))
+    session.connection_changed(True)
+    session.start()
+    session.tick()
+    local_tz = timezone(timedelta(hours=1))
+    assert not session.vote_event("u", "1", "before", opened - timedelta(microseconds=1))
+    assert session.vote_event("u", "1", "one", opened.astimezone(local_tz))
+    assert not session.vote_event("u", "2", "one", opened)
+    assert session.snapshot().round.counts == (1, 0, 0)
+    now[0] = 10
+    session.tick()
+    game.pending = False
+    session.tick()
+    assert not session.vote_event("u", "2", "one", opened)
+    assert session.vote_event("u", "2", "two", opened)
+    assert session.snapshot().round.counts == (0, 1, 0)
+
+
+def test_event_requires_timezone_and_respects_monotonic_deadline():
+    now = [0.0]
+    opened = datetime(2026, 11, 6, 10, tzinfo=UTC)
+    session = Session(Game(), Platform(), 10, clock=FakeClock(now, opened))
+    session.connection_changed(True)
+    session.start()
+    session.tick()
+    with pytest.raises(ValueError):
+        session.vote_event("user", "1", "id", opened.replace(tzinfo=None))
+    now[0] = 10
+    assert not session.vote_event("user", "1", "id", opened)
+
+
+def test_deduplication_capacity_cancels_round(monkeypatch):
+    monkeypatch.setattr("chaos_voting.session._MAX_ROUND_MESSAGE_IDS", 1)
+    opened = datetime(2026, 11, 6, 10, tzinfo=UTC)
+    game = Game()
+    session = Session(game, Platform(), 10, clock=FakeClock([0.0], opened))
+    session.connection_changed(True)
+    session.start()
+    session.tick()
+    assert session.vote_event("u", "1", "first", opened)
+    assert not session.vote_event("u", "2", "first", opened)
+    assert not session.vote_event("u", "2", "second", opened)
+    assert session.snapshot().state is SessionState.ERROR
+    assert session.snapshot().round.state is RoundState.CANCELLED
+    assert not game.submissions
+
+
+def test_late_event_does_not_exhaust_capacity(monkeypatch):
+    monkeypatch.setattr("chaos_voting.session._MAX_ROUND_MESSAGE_IDS", 1)
+    now = [0.0]
+    opened = datetime(2026, 11, 6, 10, tzinfo=UTC)
+    game = Game()
+    session = Session(game, Platform(), 10, clock=FakeClock(now, opened))
+    session.connection_changed(True)
+    session.start()
+    session.tick()
+    assert session.vote_event("u", "1", "first", opened)
+    now[0] = 10
+    assert not session.vote_event("u", "2", "late", opened)
+    session.tick()
+    assert session.snapshot().state is SessionState.WAITING_COMMAND
+    assert len(game.submissions) == 1
+
+
+def test_wall_clock_changes_do_not_change_round_deadline():
+    clock = FakeClock([0.0])
+    game = Game()
+    session = Session(game, Platform(), 10, clock=clock)
+    session.connection_changed(True)
+    session.start()
+    session.tick()
+    clock.utc += timedelta(days=1)
+    session.tick()
+    assert session.snapshot().state is SessionState.VOTING
+    clock.now[0] = 10
+    session.tick()
+    assert session.snapshot().state is SessionState.WAITING_COMMAND

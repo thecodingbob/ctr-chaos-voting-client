@@ -2,11 +2,16 @@ import io
 import json
 import logging
 import traceback
+from datetime import UTC, datetime
 from urllib.error import HTTPError
 
 import pytest
 
+from chaos_voting.clock import Clock
 from chaos_voting.eventsub import EventSubError, TwitchEventSub
+from chaos_voting.game_files import GameFiles
+from chaos_voting.session import Session, SessionState
+from chaos_voting.voting import RoundState
 
 
 def message(kind, payload=None, **metadata):
@@ -33,7 +38,8 @@ class Socket:
 def notification(event_id="event", text="1", user="private-user"):
     return message("notification", {"event": {"broadcaster_user_id": "123",
                    "chatter_user_id": user, "message": {"text": text}}},
-                   message_id=event_id, subscription_type="channel.chat.message")
+                   message_id=event_id, message_timestamp="2026-11-06T10:00:00Z",
+                   subscription_type="channel.chat.message")
 
 
 def setup(*messages, response=None, clock=lambda: 0):
@@ -45,12 +51,13 @@ def setup(*messages, response=None, clock=lambda: 0):
         return io.BytesIO(json.dumps(response or {"data": [{"status": "enabled"}]}).encode())
 
     receiver = TwitchEventSub("client", "secret-token", "123", on_connection=events.append,
-                              on_message=lambda user, text: events.append((user, text)),
+                              on_message=lambda user, text, event_id, timestamp:
+                              events.append((user, text, event_id, timestamp)),
                               connector=lambda *args, **kwargs: socket, opener=subscribe, clock=clock)
     return receiver, socket, events, requests
 
 
-def test_subscribe_receive_deduplicate_and_disconnect(caplog):
+def test_subscribe_receive_and_disconnect(caplog):
     receiver, socket, events, requests = setup(notification(), notification())
     with caplog.at_level(logging.DEBUG):
         receiver.open()
@@ -61,7 +68,8 @@ def test_subscribe_receive_deduplicate_and_disconnect(caplog):
     body = json.loads(requests[0].data)
     assert body["condition"] == {"broadcaster_user_id": "123", "user_id": "123"}
     assert body["transport"]["session_id"] == "session"
-    assert events == [True, ("private-user", "1"), False]
+    event = ("private-user", "1", "event", datetime(2026, 11, 6, 10, tzinfo=UTC))
+    assert events == [True, event, event, False]
     assert socket.closed
     assert "secret-token" not in caplog.text
     assert "private-user" not in caplog.text
@@ -70,6 +78,9 @@ def test_subscribe_receive_deduplicate_and_disconnect(caplog):
 @pytest.mark.parametrize("bad", [
     "not json", message("revocation"), message("session_reconnect"),
     notification(user=""), message("notification", {}, subscription_type="channel.chat.message"),
+    message("notification", {"event": {"broadcaster_user_id": "123", "chatter_user_id": "u",
+                                       "message": {"text": "1"}}}, message_id="id",
+            message_timestamp="2026-11-06T10:00:00", subscription_type="channel.chat.message"),
 ])
 def test_interruption_notifies_before_error(bad):
     receiver, socket, events, _ = setup(bad)
@@ -94,17 +105,6 @@ def test_disconnect_callback_failure_is_reported_and_socket_closed():
     with pytest.raises(EventSubError, match="disconnect callback failed") as error:
         receiver.close()
     assert "private payload" not in "".join(traceback.format_exception(error.value))
-    assert socket.closed
-
-
-def test_deduplication_capacity_disconnects(monkeypatch):
-    monkeypatch.setattr("chaos_voting.eventsub._MAX_EVENT_IDS", 1)
-    receiver, socket, events, _ = setup(notification("a"), notification("b"))
-    receiver.open()
-    assert receiver.receive()
-    with pytest.raises(EventSubError):
-        receiver.receive()
-    assert events == [True, ("private-user", "1"), False]
     assert socket.closed
 
 
@@ -167,3 +167,45 @@ def test_connection_callback_failure_closes_socket():
     with pytest.raises(EventSubError):
         receiver.open()
     assert socket.closed
+
+
+def test_receiver_and_session_round_transition_and_disconnect(tmp_path):
+    (tmp_path / "effects").write_text("one\ntwo\n", encoding="utf-8")
+    now = [0.0]
+    opened = datetime(2026, 11, 6, 10, tzinfo=UTC)
+
+    class Platform:
+        def announce_options(self, options):
+            pass
+
+        def announce_result(self, winner):
+            pass
+
+    class FakeClock(Clock):
+        def monotonic(self):
+            return now[0]
+
+        def utc_now(self):
+            return opened
+
+    session = Session(GameFiles(tmp_path), Platform(), 10, clock=FakeClock())
+    socket = Socket(WELCOME, notification(), notification(), notification(), message("revocation"))
+    receiver = TwitchEventSub("client", "token", "123", on_connection=session.connection_changed,
+                              on_message=session.vote_event, connector=lambda *a, **k: socket,
+                              opener=lambda *a, **k: io.BytesIO(b'{"data":[{"status":"enabled"}]}'))
+    session.start()
+    receiver.open()
+    session.tick()
+    receiver.receive()
+    receiver.receive()
+    assert session.snapshot().round.counts == (1, 0)
+    now[0] = 10
+    session.tick()
+    (tmp_path / "command").unlink()
+    session.tick()
+    receiver.receive()
+    assert session.snapshot().round.counts == (0, 0)
+    with pytest.raises(EventSubError):
+        receiver.receive()
+    assert session.snapshot().state is SessionState.WAITING_CONNECTION
+    assert session.snapshot().round.state is RoundState.CANCELLED

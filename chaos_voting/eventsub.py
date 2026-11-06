@@ -9,6 +9,7 @@ integrated. A delayed caller may conservatively trigger a keepalive failure.
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from http.client import HTTPException
 from time import monotonic
 from urllib.error import HTTPError, URLError
@@ -26,7 +27,6 @@ _URL = "wss://eventsub.wss.twitch.tv/ws"
 _SUBSCRIPTIONS_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
 _WELCOME_TIMEOUT = 10
 _SUBSCRIPTION_TYPE = "channel.chat.message"
-_MAX_EVENT_IDS = 100_000
 
 
 class EventSubError(Exception):
@@ -42,7 +42,8 @@ class TwitchEventSub:
 
     def __init__(
         self, client_id: str, access_token: str, user_id: str, *,
-        on_connection: Callable[[bool], None], on_message: Callable[[str, str], object],
+        on_connection: Callable[[bool], None],
+        on_message: Callable[[str, str, str, datetime], object],
         connector: Callable = connect, opener: Callable = urlopen,
         clock: Callable[[], float] = monotonic,
     ) -> None:
@@ -60,7 +61,6 @@ class TwitchEventSub:
         self._connected = False
         self._deadline = 0.0
         self._keepalive = 0
-        self._seen: set[str] = set()
 
     def open(self) -> None:
         """Connect and subscribe before reporting a usable chat connection."""
@@ -82,7 +82,6 @@ class TwitchEventSub:
             self._keepalive = keepalive
             self._deadline = self._clock() + keepalive
             self._subscribe(session_id)
-            self._seen.clear()
             self._connected = True
             try:
                 self._on_connection(True)
@@ -194,17 +193,19 @@ class TwitchEventSub:
         if not isinstance(event, dict) or not isinstance(event.get("message"), dict):
             raise EventSubError("Invalid EventSub chat event")
         event_id = metadata.get("message_id")
+        timestamp = metadata.get("message_timestamp")
         user_id, text = event.get("chatter_user_id"), event["message"].get("text")
         if (not isinstance(event_id, str) or not event_id or not isinstance(user_id, str)
-                or not user_id or not isinstance(text, str)
+                or not user_id or not isinstance(text, str) or not isinstance(timestamp, str)
                 or event.get("broadcaster_user_id") != self._user_id):
             raise EventSubError("Invalid EventSub chat event")
-        if event_id in self._seen:
-            return
-        if len(self._seen) >= _MAX_EVENT_IDS:
-            raise EventSubError("EventSub deduplication capacity reached")
-        self._seen.add(event_id)
         try:
-            self._on_message(user_id, text)
+            sent_at = datetime.fromisoformat(timestamp)
+            if sent_at.tzinfo is None or sent_at.utcoffset() is None:
+                raise ValueError("Missing timestamp timezone")
+        except ValueError:
+            raise EventSubError("Invalid EventSub notification timestamp") from None
+        try:
+            self._on_message(user_id, text, event_id, sent_at)
         except Exception:  # noqa: BLE001 - callbacks are an external boundary
             raise EventSubError("EventSub message callback failed") from None
