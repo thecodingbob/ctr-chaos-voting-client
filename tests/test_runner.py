@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from chaos_voting.eventsub import EventSubError
 from chaos_voting.runner import SessionRunner
 from chaos_voting.session import SessionState
+from chaos_voting.twitch.eventsub import EventSubError
 
 
 class Session:

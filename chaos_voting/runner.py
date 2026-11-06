@@ -5,8 +5,8 @@ from collections.abc import Callable
 from math import isfinite
 from threading import Event, Lock
 
-from chaos_voting.eventsub import EventSubError, TwitchEventSub
 from chaos_voting.session import Session, SessionState
+from chaos_voting.twitch.eventsub import EventSubError, TwitchEventSub
 
 logger = logging.getLogger(__name__)
 _TICK_INTERVAL = 0.1

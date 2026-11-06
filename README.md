@@ -24,6 +24,10 @@ installations may use different compatible versions.
 
 ## Current scope
 
+The voting and session modules live in `chaos_voting/`; game and Twitch
+integrations live in `chaos_voting/game/` and `chaos_voting/twitch/`.
+Tests mirror this layout under `tests/`.
+
 The project currently contains a platform-independent voting round, a game
 file adapter, and explicitly driven session orchestration with tests. The
 session requires a platform adapter to forward connection changes and votes,

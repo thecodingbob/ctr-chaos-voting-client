@@ -8,9 +8,9 @@ from urllib.error import HTTPError
 import pytest
 
 from chaos_voting.clock import Clock
-from chaos_voting.eventsub import EventSubError, TwitchEventSub
-from chaos_voting.game_files import GameFiles
+from chaos_voting.game.files import GameFiles
 from chaos_voting.session import Session, SessionState
+from chaos_voting.twitch.eventsub import EventSubError, TwitchEventSub
 from chaos_voting.voting import RoundState
 
 

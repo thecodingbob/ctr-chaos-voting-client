@@ -1,7 +1,7 @@
 import logging
 from random import Random
 
-from chaos_voting.game_files import GameFiles
+from chaos_voting.game.files import GameFiles
 from chaos_voting.voting import VotingRound
 
 
@@ -21,7 +21,7 @@ def test_round_logs_lifecycle_without_user_data(caplog) -> None:
 
 def test_game_logs_submission_without_claiming_activation(tmp_path, caplog) -> None:
     game = GameFiles(tmp_path)
-    with caplog.at_level(logging.INFO, logger="chaos_voting.game_files"):
+    with caplog.at_level(logging.INFO, logger="chaos_voting.game.files"):
         game.submit("effect")
     assert "waiting for the game to consume it" in caplog.text
     assert "activated" not in caplog.text

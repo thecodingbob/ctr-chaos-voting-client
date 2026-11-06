@@ -13,7 +13,7 @@ from math import isfinite
 from random import Random
 
 from chaos_voting.clock import Clock
-from chaos_voting.game_files import GameFileError, GameProvider
+from chaos_voting.game.files import GameFileError, GameProvider
 from chaos_voting.platform import PlatformError, VotingPlatform
 from chaos_voting.voting import RoundSnapshot, RoundState, VotingRound
 
