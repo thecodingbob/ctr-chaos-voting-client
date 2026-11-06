@@ -18,7 +18,7 @@ from chaos_voting.platform import PlatformError, VotingPlatform
 from chaos_voting.voting import RoundSnapshot, RoundState, VotingRound
 
 logger = logging.getLogger(__name__)
-_MAX_ROUND_MESSAGE_IDS = 100_000
+_MAX_ROUND_MESSAGE_IDS = 10_000
 
 
 class SessionState(Enum):

@@ -60,3 +60,4 @@
 - Prompt the user before adding a new dependency to the project, explaining why and how would it help.
 - When you're done implementing something, spawn a sub-agent and ask it to do a code review.
 - Always stage the files you create modify, unless asked differently.
+- Don't immediately roll the code back when you find an issue. Try to fix it first.
